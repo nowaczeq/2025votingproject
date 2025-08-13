@@ -5,6 +5,7 @@ library(car)
 library(ggplot2)
 library(sandwich)
 library(dplyr)
+library(lmtest)
 
 
 #####################
@@ -124,49 +125,41 @@ colnames(data_round2) = round2_col_names
 df = merge(data_round1, data_round2, by = c("id", "gmina", "gmina_area", "powiat", "powiat_area", 
                                             "voivod", "hq"))
 
+model1_full = lm(nawrocki2 ~ trzaskowski1 + nawrocki1  + biejat + 
+                   braun + hołownia + jakubiak + mentzen + senyszyn + 
+                   zandberg + stanowski + maciak + bartoszewicz + woch + no_voted2, data = df)
+model2_full = lm(trzaskowski2 ~ trzaskowski1 + nawrocki1  + biejat + 
+                   braun + hołownia + jakubiak + mentzen + senyszyn + 
+                   zandberg + woch + stanowski + maciak + bartoszewicz, data = df)
+
+# Group together the smaller candidates
+other = c("woch", "stanowski", "maciak", "bartoszewicz")
+df$other1 = rowSums(df[, other], na.rm = TRUE)
+df = df[, !names(df) %in% other]
+
+
 ### FUNDACJA BATOREGO ANALYSIS ###
 # Linear regression: round 1 ~ round 2
-model1 = lm(nawrocki2 ~ trzaskowski1 + nawrocki1 + bartoszewicz + biejat + 
-              braun + hołownia + jakubiak + maciak + mentzen + senyszyn + 
-              stanowski + woch + zandberg + no_voted2, data = df)
-model2 = lm(trzaskowski2 ~ trzaskowski1 + nawrocki1 + bartoszewicz + biejat + 
-              braun + hołownia + jakubiak + maciak + mentzen + senyszyn + 
-              stanowski + woch + zandberg + no_voted1, data = df)
+model1 = lm(nawrocki2 ~ trzaskowski1 + nawrocki1  + biejat + 
+              braun + hołownia + jakubiak + mentzen + senyszyn + 
+              zandberg + other1, data = df)
+model2 = lm(trzaskowski2 ~ trzaskowski1 + nawrocki1  + biejat + 
+              braun + hołownia + jakubiak + mentzen + senyszyn + 
+              zandberg + other1, data = df)
 
+# Test statistical assumptions
 test_assumptions(model1)
-#Statistical assumptions test
-#Non-multicollinearity
-vif(model1)
-vif(model2)
+test_assumptions(model2)
 
-#Random residuals
-resid1 = resid(model1)
-resid2 = resid(model2)
-#shapiro.test(resid1)
-#shapiro.test(resid2)
-#Heteroscedasticity
-gvlma(model1)
-gvlma(model2)
-#Independence
-dwtest(model1)
-dwtest(model2)
-
-# Visualize residuals vs fitted
+# Continue assumptions testing: visualize residuals vs fitted
 df_plot = data.frame(fitted = fitted(model1), residuals = resid(model1))
 ggplot(df_plot, aes(x = fitted, y = residuals)) +
   geom_point(alpha = 0.5) +
   geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
-  labs(title = "Residuals vs Fitted Plot",
-       x = "Fitted Values",
-       y = "Residuals") +
+  labs(title = "Błędy vs wartości",
+       x = "Wartości",
+       y = "Błędy modelu") +
   theme_minimal()
-
-# Apply Robust Standard Errors to improve the p-values?
-model1_alt = lm(sqrt(nawrocki2) ~ trzaskowski1 + nawrocki1 + bartoszewicz + biejat + 
-                  braun + hołownia + jakubiak + maciak + mentzen + senyszyn + 
-                  stanowski + woch + zandberg, data = df)
-summary(model1_alt)
-test_assumptions(model1_alt)
 
 ### KRZYSZTOF KONTEK ANALYSIS ###
 # General, for the whole country
@@ -183,15 +176,17 @@ regionaldf = regionaldf %>%
     across(where(is.numeric), sum, na.rm = TRUE)
   )
 
+# Visualize frequency of voting station size
+hist(regionaldf$count,
+     breaks = 500,
+     main = "Station size frequency",
+     xlab = "Count of stations",
+     ylab = "Frequency",
+     col = "lightblue",
+     border = "black")
+mean(regionaldf$count)
+
 regional_mad_2025_analysis = mad_analysis("2025 regional", regionaldf, "trzaskowski2", "nawrocki2")
-
-
-## KRAKÓW KRAKÓW KOCHAM KRAKÓW KRAKÓW MIESZKAM TU TU TU TU
-krakowdf =  df %>%
-  filter(grepl("m. Kraków", df$gmina, ignore.case = TRUE))
-
-krakow_mad_2025_analysis = mad_analysis("2025 Kraków", krakowdf, "trzaskowski2", "nawrocki2")
-
 
 # Benford's Law
 benford2025_nawro = compare_with_benford(df, nawrocki2)
@@ -265,23 +260,10 @@ model4 = lm(trzaskowski2 ~ trzaskowski1 + duda1 + biedron + bosak + holownia + j
               witkowski + zoltek + no_voted2, data = df2020)
                
 test_assumptions(model3)
+test_assumptions(model4)
 
 df2020_plot = data.frame(fitted = fitted(model3), residuals = resid(model3))
 ggplot(df2020_plot, aes(x = fitted, y = residuals)) +
-  geom_point(alpha = 0.5) +
-  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
-  labs(title = "Residuals vs Fitted Plot",
-       x = "Fitted Values",
-       y = "Residuals") +
-  theme_minimal()
-
-model3_alt = lm(sqrt(duda2) ~ trzaskowski1 + duda1 + biedron + bosak + holownia + jakubiak +
-                  kosiniakkamysz + piotrowski + tanajno + 
-                  witkowski + zoltek, data = df2020)
-
-gvlma(model3_alt)
-df2020_alt_plot = data.frame(fitted = fitted(model3_alt), residuals = resid(model3_alt))
-ggplot(df2020_alt_plot, aes(x = fitted, y = residuals)) +
   geom_point(alpha = 0.5) +
   geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
   labs(title = "Residuals vs Fitted Plot",
@@ -296,16 +278,20 @@ mad_analysis_2020 = mad_analysis("2020 general", df2020, "trzaskowski2", "duda2"
 # Next best thing to postal codes - regional code
 # TODO: No regional differentiation in df
 
-# KRAKOW KRAKOW ANALYSIS :DDDD
-krakow2020df =  df2020 %>%
-  filter(grepl("Kraków", df2020$gmina, ignore.case = TRUE))
-
-mad_analysis_krakow_2020 = mad_analysis("2020 Kraków", krakow2020df, "trzaskowski2", "duda2")
-
 # BENFORD'S LAW
-benford2020 = compare_with_benford(df2020, duda2)
+benford2020_duda = compare_with_benford(df2020, duda2)
 
-ggplot(benford2020, aes(x = factor(first_digit))) +
+ggplot(benford2020_duda, aes(x = factor(first_digit))) +
+  geom_col(aes(y = n), fill = "skyblue", color = "black", width = 0.7) +
+  geom_point(aes(y = expected_count), color = "red", size = 3) +
+  geom_line(aes(y = expected_count, group = 1), color = "red", linetype = "dashed") +
+  labs(title = "Benford's Law",
+       x = "First Digit",
+       y = "Count") +
+  theme_minimal()
+
+benford2020_trzask = compare_with_benford(df2020, trzaskowski2)
+ggplot(benford2020_trzask, aes(x = factor(first_digit))) +
   geom_col(aes(y = n), fill = "skyblue", color = "black", width = 0.7) +
   geom_point(aes(y = expected_count), color = "red", size = 3) +
   geom_line(aes(y = expected_count, group = 1), color = "red", linetype = "dashed") +
